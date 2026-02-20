@@ -70,14 +70,17 @@ export default function RegisterForm() {
 
       const userId = data.user?.id;
       if (userId) {
-        await supabase
+        const { error: profileError } = await supabase
           .from("profiles")
-          .upsert({
+          .insert({
             id: userId,
-            full_name: trimmedName,
+            full_name: fullName,
             phone: trimmedPhone,
-          })
-          .catch(() => null);
+          });
+
+        if (profileError) {
+          console.log("Profile insert error:", profileError.message);
+        }
       }
 
       if (data.session) {
