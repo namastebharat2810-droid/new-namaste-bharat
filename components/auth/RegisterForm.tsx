@@ -6,6 +6,13 @@ import { FormEvent, useMemo, useState } from "react";
 import { Loader2, UserPlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+function getAuthErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof TypeError && /fetch/i.test(error.message)) {
+    return "Cannot reach Supabase. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy.";
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 export default function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,11 +70,14 @@ export default function RegisterForm() {
 
       const userId = data.user?.id;
       if (userId) {
-        await supabase.from("profiles").upsert({
-          id: userId,
-          full_name: trimmedName,
-          phone: trimmedPhone,
-        });
+        await supabase
+          .from("profiles")
+          .upsert({
+            id: userId,
+            full_name: trimmedName,
+            phone: trimmedPhone,
+          })
+          .catch(() => null);
       }
 
       if (data.session) {
@@ -78,11 +88,7 @@ export default function RegisterForm() {
 
       setMessage("Signup successful. Please verify your email, then login.");
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to register right now."
-      );
+      setError(getAuthErrorMessage(submitError, "Unable to register right now."));
     } finally {
       setIsSubmitting(false);
     }
