@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2, Mail } from "lucide-react";
-import { getBackendBaseUrl } from "@/lib/auth-client";
+import { supabase } from "@/lib/supabase";
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
@@ -27,24 +27,20 @@ export default function ForgotPasswordForm() {
     setMessage("");
 
     try {
-      const response = await fetch(`${getBackendBaseUrl()}/api/auth/password/reset/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
-      });
+      const redirectTo = typeof window !== "undefined"
+        ? `${window.location.origin}/reset-password`
+        : undefined;
 
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: { message?: string }; message?: string }
-        | null;
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        { redirectTo }
+      );
 
-      if (!response.ok) {
-        throw new Error(payload?.error?.message ?? "Unable to request password reset.");
+      if (resetError) {
+        throw new Error(resetError.message || "Unable to request password reset.");
       }
 
-      setMessage(
-        payload?.message ??
-          "Password reset link has been sent to your email."
-      );
+      setMessage("Password reset link has been sent to your email.");
     } catch (submitError) {
       setError(
         submitError instanceof Error

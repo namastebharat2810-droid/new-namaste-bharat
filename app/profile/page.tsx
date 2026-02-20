@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import LogoutButton from "@/components/auth/LogoutButton";
 import OfferBannerSlot from "@/components/OfferBannerSlot";
-import { getAuthToken, getBackendBaseUrl } from "@/lib/auth-client";
+import { supabase } from "@/lib/supabase";
 
 type Profile = {
   full_name: string | null;
@@ -23,6 +23,8 @@ type Profile = {
 type CurrentUser = {
   id: string;
   email: string | null;
+  fullName: string | null;
+  phone: string | null;
 };
 
 export default function ProfilePage() {
@@ -33,8 +35,9 @@ export default function ProfilePage() {
     let isMounted = true;
 
     async function loadSession() {
-      const token = getAuthToken();
-      if (!token) {
+      const { data: userData, error } = await supabase.auth.getUser();
+
+      if (error || !userData.user) {
         if (isMounted) {
           setUser(null);
           setProfile(null);
@@ -42,40 +45,24 @@ export default function ProfilePage() {
         return;
       }
 
-      const response = await fetch(`${getBackendBaseUrl()}/api/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }).catch(() => null);
-
-      if (!response || !response.ok) {
-        if (isMounted) {
-          setUser(null);
-          setProfile(null);
-        }
-        return;
-      }
-
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            user?: { id?: string; email?: string | null } | null;
-            profile?: Profile | null;
-          }
-        | null;
+      const authUser = userData.user;
+      const profileResult = await supabase
+        .from("profiles")
+        .select("full_name, phone, role")
+        .eq("id", authUser.id)
+        .maybeSingle();
 
       if (!isMounted) {
         return;
       }
 
-      const nextUser =
-        payload?.user?.id && typeof payload.user.id === "string"
-          ? {
-              id: payload.user.id,
-              email: payload.user.email ?? null,
-            }
-          : null;
-      setUser(nextUser);
-      setProfile(payload?.profile ?? null);
+      setUser({
+        id: authUser.id,
+        email: authUser.email ?? null,
+        fullName: typeof authUser.user_metadata?.full_name === "string" ? authUser.user_metadata.full_name : null,
+        phone: typeof authUser.user_metadata?.phone === "string" ? authUser.user_metadata.phone : null,
+      });
+      setProfile(profileResult.data ?? null);
     }
 
     void loadSession();
@@ -150,11 +137,11 @@ export default function ProfilePage() {
                   Logged In Account
                 </p>
                 <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[0.01em] text-slate-900">
-                  {profile?.full_name ?? "User"}
+                  {profile?.full_name ?? user.fullName ?? "User"}
                 </h1>
                 <p className="mt-1 text-sm text-slate-600">
                   {user.email ? `${user.email} | ` : ""}
-                  {profile?.phone ?? "Phone not added"}
+                  {profile?.phone ?? user.phone ?? "Phone not added"}
                 </p>
                 {profile?.role ? (
                   <p className="mt-1 text-xs uppercase tracking-[0.14em] text-slate-500">
@@ -230,7 +217,7 @@ export default function ProfilePage() {
           >
             Seller Analytics
           </Link>
-          {profile?.role === "admin" ? (
+          {String(profile?.role || "").toLowerCase() === "admin" ? (
             <Link
               href="/admin"
               className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"

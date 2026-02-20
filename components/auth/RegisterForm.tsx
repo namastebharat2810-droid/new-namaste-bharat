@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { Loader2, UserPlus } from "lucide-react";
-import { getBackendBaseUrl, saveAuthToken } from "@/lib/auth-client";
+import { supabase } from "@/lib/supabase";
 
 export default function RegisterForm() {
   const router = useRouter();
@@ -42,45 +42,41 @@ export default function RegisterForm() {
     setMessage("");
 
     try {
-      const response = await fetch(`${getBackendBaseUrl()}/api/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName: fullName.trim(),
-          phone: phone.trim(),
-          email: email.trim().toLowerCase(),
-          password,
-        }),
+      const normalizedEmail = email.trim().toLowerCase();
+      const trimmedName = fullName.trim();
+      const trimmedPhone = phone.trim();
+
+      const { data, error: signupError } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
+            full_name: trimmedName,
+            phone: trimmedPhone,
+          },
+        },
       });
 
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            error?: { message?: string };
-            session?: { access_token?: string | null } | null;
-            emailConfirmationRequired?: boolean;
-          }
-        | null;
-
-      if (!response.ok) {
-        throw new Error(payload?.error?.message ?? "Unable to register right now.");
+      if (signupError) {
+        throw new Error(signupError.message || "Unable to register right now.");
       }
 
-      const accessToken = payload?.session?.access_token ?? "";
-      if (accessToken) {
-        saveAuthToken(accessToken);
+      const userId = data.user?.id;
+      if (userId) {
+        await supabase.from("profiles").upsert({
+          id: userId,
+          full_name: trimmedName,
+          phone: trimmedPhone,
+        });
+      }
+
+      if (data.session) {
         router.push(nextPath);
         router.refresh();
         return;
       }
 
-      if (payload?.emailConfirmationRequired) {
-        setMessage(
-          "Signup successful. Please verify your email, then login."
-        );
-        return;
-      }
-
-      throw new Error("Signup completed but no session was returned.");
+      setMessage("Signup successful. Please verify your email, then login.");
     } catch (submitError) {
       setError(
         submitError instanceof Error

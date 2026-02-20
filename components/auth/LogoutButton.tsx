@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Loader2, LogOut } from "lucide-react";
-import { clearAuthToken, getAuthToken, getBackendBaseUrl } from "@/lib/auth-client";
+import { supabase } from "@/lib/supabase";
 
 export default function LogoutButton() {
   const [isLoading, setIsLoading] = useState(false);
@@ -14,12 +14,7 @@ export default function LogoutButton() {
     setIsLoading(true);
 
     try {
-      const token = getAuthToken();
-      await fetch(`${getBackendBaseUrl()}/api/auth/logout`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      }).catch(() => null);
-      clearAuthToken();
+      await supabase.auth.signOut();
       window.location.assign("/profile");
     } finally {
       setIsLoading(false);

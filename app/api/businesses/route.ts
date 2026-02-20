@@ -40,13 +40,15 @@ export async function POST(request: NextRequest) {
       return jsonError(400, "Invalid business payload.", validation.errors);
     }
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-    const upstream = await fetch(`${backendUrl}/api/businesses`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(validation.data),
-      cache: "no-store",
-    }).catch(() => null);
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
+    const upstream = backendUrl
+      ? await fetch(`${backendUrl}/api/businesses`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validation.data),
+          cache: "no-store",
+        }).catch(() => null)
+      : null;
 
     if (upstream && upstream.ok) {
       const payload = await upstream.json();

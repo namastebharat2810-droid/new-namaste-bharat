@@ -3,21 +3,27 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import { getBackendBaseUrl } from "@/lib/auth-client";
+import { supabase } from "@/lib/supabase";
 
-function getRecoveryTokenFromHash() {
+function getRecoverySessionFromHash() {
   if (typeof window === "undefined") {
-    return "";
+    return { accessToken: "", refreshToken: "" };
   }
+
   const raw = window.location.hash.startsWith("#")
     ? window.location.hash.slice(1)
     : window.location.hash;
   const params = new URLSearchParams(raw);
-  return params.get("access_token") || "";
+
+  return {
+    accessToken: params.get("access_token") || "",
+    refreshToken: params.get("refresh_token") || "",
+  };
 }
 
 export default function ResetPasswordForm() {
-  const [token, setToken] = useState("");
+  const [sessionReady, setSessionReady] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -25,16 +31,53 @@ export default function ResetPasswordForm() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    setToken(getRecoveryTokenFromHash());
+    let mounted = true;
+
+    async function initRecoverySession() {
+      const { accessToken, refreshToken } = getRecoverySessionFromHash();
+
+      if (accessToken && refreshToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (!mounted) {
+          return;
+        }
+
+        if (sessionError) {
+          setSessionReady(false);
+          setIsCheckingSession(false);
+          return;
+        }
+
+        setSessionReady(true);
+        setIsCheckingSession(false);
+        return;
+      }
+
+      const { data } = await supabase.auth.getSession();
+      if (mounted) {
+        setSessionReady(Boolean(data.session));
+        setIsCheckingSession(false);
+      }
+    }
+
+    void initRecoverySession();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const canSubmit = useMemo(
     () =>
-      Boolean(token) &&
+      sessionReady &&
       password.length >= 6 &&
       confirmPassword.length >= 6 &&
       password === confirmPassword,
-    [token, password, confirmPassword]
+    [sessionReady, password, confirmPassword]
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -48,24 +91,15 @@ export default function ResetPasswordForm() {
     setMessage("");
 
     try {
-      const response = await fetch(`${getBackendBaseUrl()}/api/auth/password/reset/confirm`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ password }),
+      const { error: updateError } = await supabase.auth.updateUser({
+        password,
       });
 
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: { message?: string }; message?: string }
-        | null;
-
-      if (!response.ok) {
-        throw new Error(payload?.error?.message ?? "Unable to reset password.");
+      if (updateError) {
+        throw new Error(updateError.message || "Unable to reset password.");
       }
 
-      setMessage(payload?.message ?? "Password has been reset. Please login.");
+      setMessage("Password has been reset. Please login.");
       setPassword("");
       setConfirmPassword("");
     } catch (submitError) {
@@ -79,7 +113,15 @@ export default function ResetPasswordForm() {
     }
   }
 
-  if (!token) {
+  if (isCheckingSession) {
+    return (
+      <div className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        Checking recovery session...
+      </div>
+    );
+  }
+
+  if (!sessionReady) {
     return (
       <div className="space-y-3">
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">

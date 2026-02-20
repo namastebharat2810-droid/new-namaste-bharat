@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+  const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
 
   return NextResponse.json({
     service: "namastebharat-api",
@@ -17,12 +17,8 @@ export async function GET() {
       offers: "/api/offers",
       categories: "/api/categories",
       leads: "/api/leads",
-      authBackendHealth: `${backendUrl}/api/health`,
-      authBackendSignup: `${backendUrl}/api/auth/signup`,
-      authBackendLogin: `${backendUrl}/api/auth/login`,
-      authBackendMe: `${backendUrl}/api/auth/me`,
-      authBackendLogout: `${backendUrl}/api/auth/logout`,
+      backendHealth: backendUrl ? `${backendUrl}/api/health` : null,
     },
-    note: "Frontend business APIs are here. Auth APIs are served by Express backend.",
+    note: "Frontend business APIs are served here. Auth is handled directly by Supabase.",
   });
 }

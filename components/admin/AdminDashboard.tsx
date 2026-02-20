@@ -1,14 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, ShieldAlert, XCircle } from "lucide-react";
-import { getAuthToken, getBackendBaseUrl } from "@/lib/auth-client";
-
-type SessionPayload = {
-  user?: { id?: string; email?: string | null };
-  profile?: { role?: string | null; full_name?: string | null };
-};
+import { getBackendBaseUrl } from "@/lib/auth-client";
+import { supabase } from "@/lib/supabase";
 
 type AdminListing = {
   id: string;
@@ -32,16 +28,8 @@ export default function AdminDashboard() {
   const [workingId, setWorkingId] = useState("");
   const [usingLocalFallback, setUsingLocalFallback] = useState(false);
 
-  const token = useMemo(() => getAuthToken(), []);
-
   const loadListings = useCallback(async () => {
-    if (!token) {
-      setListings([]);
-      return;
-    }
-
     const response = await fetch(`${getBackendBaseUrl()}/api/admin/listings?status=pending`, {
-      headers: { Authorization: `Bearer ${token}` },
     }).catch(() => null);
 
     if (response && response.ok) {
@@ -84,32 +72,27 @@ export default function AdminDashboard() {
 
     setListings(localPending);
     setUsingLocalFallback(true);
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
     async function boot() {
-      if (!token) {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) {
         if (!mounted) return;
         setIsLoading(false);
         setIsAdmin(false);
         return;
       }
 
-      const response = await fetch(`${getBackendBaseUrl()}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => null);
-
-      if (!response || !response.ok) {
-        if (!mounted) return;
-        setIsLoading(false);
-        setIsAdmin(false);
-        return;
-      }
-
-      const payload = (await response.json().catch(() => null)) as SessionPayload | null;
-      const role = String(payload?.profile?.role || "").toLowerCase();
+      const authUser = userData.user;
+      const profileResult = await supabase
+        .from("profiles")
+        .select("role, full_name")
+        .eq("id", authUser.id)
+        .maybeSingle();
+      const role = String(profileResult.data?.role || authUser.user_metadata?.role || "").toLowerCase();
 
       if (!mounted) return;
 
@@ -119,7 +102,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      setAdminName(payload?.profile?.full_name || "Admin");
+      setAdminName(profileResult.data?.full_name || authUser.user_metadata?.full_name || "Admin");
       setIsAdmin(true);
       await loadListings();
       setIsLoading(false);
@@ -129,17 +112,16 @@ export default function AdminDashboard() {
     return () => {
       mounted = false;
     };
-  }, [loadListings, token]);
+  }, [loadListings]);
 
   async function activateListing(id: string) {
-    if (!token || workingId) return;
+    if (workingId) return;
     setWorkingId(id);
     setMessage("");
 
     try {
       const response = await fetch(`${getBackendBaseUrl()}/api/admin/listings/${id}/activate`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
         if (usingLocalFallback) {
@@ -169,7 +151,7 @@ export default function AdminDashboard() {
   }
 
   async function rejectListing(id: string) {
-    if (!token || workingId) return;
+    if (workingId) return;
     const reason = window.prompt("Reason for rejection (optional):", "Insufficient listing details");
     if (reason === null) return;
 
@@ -181,7 +163,6 @@ export default function AdminDashboard() {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ reason: reason.trim() }),
       });
